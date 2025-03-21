@@ -180,6 +180,14 @@ def process_taplink_order(taplink_data):
         return None
 
 
+@app.route('/')
+def index():
+    """
+    Корневой маршрут для проверки работоспособности сервера
+    """
+    return jsonify({'status': 'ok', 'message': 'Taplink to RetailCRM connector is running'})
+
+
 @app.route('/webhook/taplink', methods=['POST'])
 def taplink_webhook():
     """
