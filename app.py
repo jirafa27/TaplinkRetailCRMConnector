@@ -89,23 +89,26 @@ def check_customer_exists(phone):
 
 def create_order_in_crm(order_data):
     """
-    Создание заказа в RetailCRM через API
+    Создает заказ в RetailCRM
     """
     try:
         # Формируем URL для создания заказа
-        url = f"{RETAILCRM_URL}/orders/create"
-
-        # Добавляем API ключ к запросу
-        params = {
-            'apiKey': RETAILCRM_API_KEY
-        }
-
+        url = f"{RETAILCRM_URL}/api/v5/orders/create"
+        
+        # Добавляем API ключ к параметрам запроса
+        params = {'apiKey': RETAILCRM_API_KEY}
+        
         # Отправляем POST запрос
         response = requests.post(url, json=order_data, params=params)
-        response.raise_for_status()  # Проверяем на ошибки HTTP
-
-        return response.json()
-    except requests.exceptions.RequestException as e:
+        
+        # Проверяем ответ
+        if response.status_code == 201:
+            return response.json()
+        else:
+            logger.error(f"Error creating order in RetailCRM: {response.status_code} {response.text}")
+            return None
+            
+    except Exception as e:
         logger.error(f"Error creating order in RetailCRM: {str(e)}")
         return None
 
@@ -135,6 +138,7 @@ def process_taplink_order(taplink_data):
             base_article = item.get('article')
             nominal = item.get('nominal')
             quantity = item.get('quantity', 1)
+            price = item.get('price', 0)
 
             # Получаем наименование товара
             product_name = PRODUCTS_MAPPING.get(base_article, f"Товар с артикулом {base_article}")
@@ -142,30 +146,41 @@ def process_taplink_order(taplink_data):
             # Формируем артикул в формате RetailCRM
             crm_article = f"{base_article}-{nominal}"
 
-            crm_items.append({
-                'article': crm_article,
+            item_data = {
                 'quantity': quantity,
-                'price': item.get('price', 0),
-                'name': product_name  # Добавляем наименование товара
-            })
+                'initialPrice': price,  # Явно указываем цену
+                'productName': product_name,
+                'offer': {
+                    'externalId': crm_article  # Используем externalId для привязки к каталогу
+                }
+            }
+            crm_items.append(item_data)
 
             logger.info(f"Processing order item: article={base_article}, nominal={nominal}, "
-                        f"product_name={product_name}, crm_article={crm_article}, quantity={quantity}")
+                       f"product_name={product_name}, crm_article={crm_article}, quantity={quantity}")
 
         # Формируем данные заказа для RetailCRM
         order_data = {
             'order': {
                 'items': crm_items,
+                'orderType': 'fizik',  # Тип заказа для физ. лица
+                'orderMethod': 'taplink',  # Метод оформления заказа
+                'status': 'new',  # Статус нового заказа
                 'customer': {
                     'phone': phone,
                     'firstName': customer_data.get('name'),
                     'email': customer_data.get('email'),
-                    'address': customer_data.get('address'),
-                    'city': customer_data.get('city'),
-                    'street': customer_data.get('street'),
-                    'building': customer_data.get('building'),
-                    'flat': customer_data.get('flat'),
-                    'comment': customer_data.get('comment')
+                    'contragentType': 'individual'  # Тип контрагента - физ. лицо
+                },
+                'delivery': {
+                    'code': 'delivery',  # Код способа доставки
+                    'address': {
+                        'text': customer_data.get('address'),  # Полный адрес в текстовом виде
+                        'city': customer_data.get('city'),
+                        'street': customer_data.get('street'),
+                        'building': customer_data.get('building'),
+                        'flat': customer_data.get('flat')
+                    }
                 }
             }
         }
@@ -173,6 +188,10 @@ def process_taplink_order(taplink_data):
         # Если клиент существует, добавляем его ID
         if existing_customer:
             order_data['order']['customer']['id'] = existing_customer['id']
+
+        # Добавляем комментарий к заказу, если есть
+        if customer_data.get('comment'):
+            order_data['order']['customerComment'] = customer_data['comment']
 
         logger.info(f"Order processed successfully: {taplink_data}")
 
