@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 import os
 from dotenv import load_dotenv
 import requests
-from retailcrm import RetailCRM
 import logging
 import sys
 
@@ -62,6 +61,7 @@ PRODUCTS_MAPPING = {
     '34': 'СЫРНИКИ С ШОКОЛАДОМ'
 }
 
+
 def check_customer_exists(phone):
     """
     Проверка существования клиента в RetailCRM по номеру телефона
@@ -72,17 +72,18 @@ def check_customer_exists(phone):
             'apiKey': RETAILCRM_API_KEY,
             'filter[phone]': phone
         }
-        
+
         response = requests.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-        
+
         if data.get('success') and data.get('customers'):
             return data['customers'][0]  # Возвращаем первого найденного клиента
         return None
     except requests.exceptions.RequestException as e:
         logger.error(f"Error checking customer in RetailCRM: {str(e)}")
         return None
+
 
 def create_order_in_crm(order_data):
     """
@@ -91,20 +92,21 @@ def create_order_in_crm(order_data):
     try:
         # Формируем URL для создания заказа
         url = f"{RETAILCRM_URL}/orders/create"
-        
+
         # Добавляем API ключ к запросу
         params = {
             'apiKey': RETAILCRM_API_KEY
         }
-        
+
         # Отправляем POST запрос
         response = requests.post(url, json=order_data, params=params)
         response.raise_for_status()  # Проверяем на ошибки HTTP
-        
+
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.error(f"Error creating order in RetailCRM: {str(e)}")
         return None
+
 
 def process_taplink_order(taplink_data):
     """
@@ -115,7 +117,7 @@ def process_taplink_order(taplink_data):
         order_items = taplink_data.get('items', [])
         customer_data = taplink_data.get('customer', {})
         phone = customer_data.get('phone')
-        
+
         # Проверяем существование клиента
         existing_customer = None
         if phone:
@@ -124,30 +126,30 @@ def process_taplink_order(taplink_data):
                 logger.info(f"Found existing customer: {existing_customer.get('id')}")
             else:
                 logger.info("Customer not found in RetailCRM")
-        
+
         # Формируем позиции заказа для RetailCRM
         crm_items = []
         for item in order_items:
             base_article = item.get('article')
             nominal = item.get('nominal')
             quantity = item.get('quantity', 1)
-            
+
             # Получаем наименование товара
             product_name = PRODUCTS_MAPPING.get(base_article, f"Товар с артикулом {base_article}")
-            
+
             # Формируем артикул в формате RetailCRM
             crm_article = f"{base_article}-{nominal}"
-            
+
             crm_items.append({
                 'article': crm_article,
                 'quantity': quantity,
                 'price': item.get('price', 0),
                 'name': product_name  # Добавляем наименование товара
             })
-            
+
             logger.info(f"Processing order item: article={base_article}, nominal={nominal}, "
-                       f"product_name={product_name}, crm_article={crm_article}, quantity={quantity}")
-        
+                        f"product_name={product_name}, crm_article={crm_article}, quantity={quantity}")
+
         # Формируем данные заказа для RetailCRM
         order_data = {
             'order': {
@@ -165,17 +167,18 @@ def process_taplink_order(taplink_data):
                 }
             }
         }
-        
+
         # Если клиент существует, добавляем его ID
         if existing_customer:
             order_data['order']['customer']['id'] = existing_customer['id']
-        
+
         logger.info(f"Order processed successfully: {taplink_data}")
-        
+
         return order_data
     except Exception as e:
         logger.error(f"Error processing order: {str(e)}")
         return None
+
 
 @app.route('/webhook/taplink', methods=['POST'])
 def taplink_webhook():
@@ -186,13 +189,13 @@ def taplink_webhook():
     if request.headers.get('X-Taplink-Webhook-Secret') != TAPLINK_WEBHOOK_SECRET:
         logger.warning(f"Invalid webhook secret received: {request.headers.get('X-Taplink-Webhook-Secret')}")
         return jsonify({'error': 'Invalid webhook secret'}), 401
-    
+
     try:
         data = request.get_json()
         logger.info(f"Received webhook from Taplink: {data}")
-        
+
         processed_order = process_taplink_order(data)
-        
+
         if processed_order:
             # Отправляем заказ в RetailCRM
             response = create_order_in_crm(processed_order)
@@ -205,10 +208,11 @@ def taplink_webhook():
         else:
             logger.error(f"Failed to process order: {data}")
             return jsonify({'error': 'Failed to process order'}), 400
-            
+
     except Exception as e:
         logger.error(f"Unexpected error in webhook handler: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
