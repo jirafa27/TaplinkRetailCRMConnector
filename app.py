@@ -94,6 +94,7 @@ def create_order_in_crm(order_data):
     try:
         # Формируем URL для создания заказа
         url = f"{RETAILCRM_URL}/api/v5/orders/create"
+        logger.info(f"Sending request to RetailCRM URL: {url}")
         
         # Добавляем API ключ к параметрам запроса
         params = {'apiKey': RETAILCRM_API_KEY}
