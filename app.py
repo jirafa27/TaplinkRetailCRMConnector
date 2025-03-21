@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import requests
 import logging
 import sys
+import hmac
+import hashlib
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -193,29 +195,53 @@ def taplink_webhook():
     """
     Эндпоинт для получения вебхуков от Taplink
     """
-    # Проверка секретного ключа
-    if request.headers.get('X-Taplink-Webhook-Secret') != TAPLINK_WEBHOOK_SECRET:
-        logger.warning(f"Invalid webhook secret received: {request.headers.get('X-Taplink-Webhook-Secret')}")
-        return jsonify({'error': 'Invalid webhook secret'}), 401
-
     try:
-        data = request.get_json()
-        logger.info(f"Received webhook from Taplink: {data}")
+        # Получаем тело запроса
+        data = request.get_data()
+        
+        # Получаем подпись из заголовка
+        signature = request.headers.get('taplink-signature')
+        
+        if not signature:
+            logger.warning("No signature received in webhook request")
+            return jsonify({'error': 'No signature provided'}), 401
+            
+        # Проверяем подпись
+        expected_signature = hmac.new(
+            TAPLINK_WEBHOOK_SECRET.encode('utf-8'),
+            data,
+            hashlib.sha1
+        ).hexdigest()
+        
+        if not hmac.compare_digest(signature, expected_signature):
+            logger.warning(f"Invalid webhook signature received: {signature}")
+            return jsonify({'error': 'Invalid signature'}), 401
 
-        processed_order = process_taplink_order(data)
+        # Парсим JSON данные
+        webhook_data = request.get_json()
+        logger.info(f"Received webhook from Taplink: {webhook_data}")
 
-        if processed_order:
-            # Отправляем заказ в RetailCRM
-            response = create_order_in_crm(processed_order)
-            if response and response.get('success'):
-                logger.info(f"Order created successfully in RetailCRM: {response.get('id')}")
-                return jsonify({'success': True, 'crm_order_id': response.get('id')})
+        # Проверяем тип события
+        action = webhook_data.get('action')
+        if action == 'leads.created':
+            # Обработка нового лида
+            lead_data = webhook_data.get('data', {})
+            processed_order = process_taplink_order(lead_data)
+            
+            if processed_order:
+                response = create_order_in_crm(processed_order)
+                if response and response.get('success'):
+                    logger.info(f"Order created successfully in RetailCRM: {response.get('id')}")
+                    return jsonify({'success': True, 'crm_order_id': response.get('id')})
+                else:
+                    logger.error(f"Failed to create order in RetailCRM: {response}")
+                    return jsonify({'error': 'Failed to create order in RetailCRM'}), 500
             else:
-                logger.error(f"Failed to create order in RetailCRM: {response}")
-                return jsonify({'error': 'Failed to create order in RetailCRM'}), 500
+                logger.error(f"Failed to process lead data: {lead_data}")
+                return jsonify({'error': 'Failed to process lead data'}), 400
         else:
-            logger.error(f"Failed to process order: {data}")
-            return jsonify({'error': 'Failed to process order'}), 400
+            logger.info(f"Received unknown action: {action}")
+            return jsonify({'message': 'Unknown action received'}), 200
 
     except Exception as e:
         logger.error(f"Unexpected error in webhook handler: {str(e)}")
