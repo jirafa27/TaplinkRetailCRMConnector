@@ -64,143 +64,6 @@ PRODUCTS_MAPPING = {
 }
 
 
-def check_customer_exists(phone):
-    """
-    Проверка существования клиента в RetailCRM по номеру телефона
-    """
-    try:
-        url = f"{RETAILCRM_URL}/customers"
-        params = {
-            'apiKey': RETAILCRM_API_KEY,
-            'filter[phone]': phone
-        }
-
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get('success') and data.get('customers'):
-            return data['customers'][0]  # Возвращаем первого найденного клиента
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error checking customer in RetailCRM: {str(e)}")
-        return None
-
-
-def create_order_in_crm(order_data):
-    """
-    Создает заказ в RetailCRM
-    """
-    try:
-        # Формируем URL для создания заказа
-        url = f"{RETAILCRM_URL}/api/v5/orders/create"
-        logger.info(f"Sending request to RetailCRM URL: {url}")
-        
-        # Добавляем API ключ к параметрам запроса
-        params = {'apiKey': RETAILCRM_API_KEY}
-        
-        # Отправляем POST запрос
-        response = requests.post(url, json=order_data, params=params)
-        
-        # Проверяем ответ
-        if response.status_code == 201:
-            return response.json()
-        else:
-            logger.error(f"Error creating order in RetailCRM: {response.status_code} {response.text}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Error creating order in RetailCRM: {str(e)}")
-        return None
-
-
-def process_taplink_order(taplink_data):
-    """
-    Обработка заказа из Taplink и преобразование его в формат RetailCRM
-    """
-    try:
-        # Получаем данные о заказе
-        order_items = taplink_data.get('items', [])
-        customer_data = taplink_data.get('customer', {})
-        phone = customer_data.get('phone')
-
-        # Проверяем существование клиента
-        existing_customer = None
-        if phone:
-            existing_customer = check_customer_exists(phone)
-            if existing_customer:
-                logger.info(f"Found existing customer: {existing_customer.get('id')}")
-            else:
-                logger.info("Customer not found in RetailCRM")
-
-        # Формируем позиции заказа для RetailCRM
-        crm_items = []
-        for item in order_items:
-            base_article = item.get('article')
-            nominal = item.get('nominal')
-            quantity = item.get('quantity', 1)
-            price = item.get('price', 0)
-
-            # Получаем наименование товара
-            product_name = PRODUCTS_MAPPING.get(base_article, f"Товар с артикулом {base_article}")
-
-            # Формируем артикул в формате RetailCRM
-            crm_article = f"{base_article}-{nominal}"
-
-            item_data = {
-                'quantity': quantity,
-                'initialPrice': price,  # Явно указываем цену
-                'productName': product_name,
-                'offer': {
-                    'externalId': crm_article  # Используем externalId для привязки к каталогу
-                }
-            }
-            crm_items.append(item_data)
-
-            logger.info(f"Processing order item: article={base_article}, nominal={nominal}, "
-                       f"product_name={product_name}, crm_article={crm_article}, quantity={quantity}")
-
-        # Формируем данные заказа для RetailCRM
-        order_data = {
-            'order': {
-                'items': crm_items,
-                'orderType': 'fizik',  # Тип заказа для физ. лица
-                'orderMethod': 'taplink',  # Метод оформления заказа
-                'status': 'new',  # Статус нового заказа
-                'customer': {
-                    'phone': phone,
-                    'firstName': customer_data.get('name'),
-                    'email': customer_data.get('email'),
-                    'contragentType': 'individual'  # Тип контрагента - физ. лицо
-                },
-                'delivery': {
-                    'code': 'delivery',  # Код способа доставки
-                    'address': {
-                        'text': customer_data.get('address'),  # Полный адрес в текстовом виде
-                        'city': customer_data.get('city'),
-                        'street': customer_data.get('street'),
-                        'building': customer_data.get('building'),
-                        'flat': customer_data.get('flat')
-                    }
-                }
-            }
-        }
-
-        # Если клиент существует, добавляем его ID
-        if existing_customer:
-            order_data['order']['customer']['id'] = existing_customer['id']
-
-        # Добавляем комментарий к заказу, если есть
-        if customer_data.get('comment'):
-            order_data['order']['customerComment'] = customer_data['comment']
-
-        logger.info(f"Order processed successfully: {taplink_data}")
-
-        return order_data
-    except Exception as e:
-        logger.error(f"Error processing order: {str(e)}")
-        return None
-
 
 @app.route('/')
 def index():
@@ -218,6 +81,8 @@ def taplink_webhook():
     try:
         # Получаем тело запроса
         data = request.get_data()
+        print(data)
+        logger.info(data)
         
         # Получаем подпись из заголовка
         signature = request.headers.get('taplink-signature')
@@ -226,14 +91,14 @@ def taplink_webhook():
             logger.warning("No signature received in webhook request")
             return jsonify({'error': 'No signature provided'}), 401
             
-        # Проверяем подпись
+        # Проверяем подпись (согласно документации)
         expected_signature = hmac.new(
             TAPLINK_WEBHOOK_SECRET.encode('utf-8'),
             data,
             hashlib.sha1
         ).hexdigest()
         
-        if not hmac.compare_digest(signature, expected_signature):
+        if signature != expected_signature:
             logger.warning(f"Invalid webhook signature received: {signature}")
             return jsonify({'error': 'Invalid signature'}), 401
 
@@ -246,19 +111,41 @@ def taplink_webhook():
         if action == 'leads.created':
             # Обработка нового лида
             lead_data = webhook_data.get('data', {})
-            processed_order = process_taplink_order(lead_data)
             
-            if processed_order:
-                response = create_order_in_crm(processed_order)
-                if response and response.get('success'):
-                    logger.info(f"Order created successfully in RetailCRM: {response.get('id')}")
-                    return jsonify({'success': True, 'crm_order_id': response.get('id')})
-                else:
-                    logger.error(f"Failed to create order in RetailCRM: {response}")
-                    return jsonify({'error': 'Failed to create order in RetailCRM'}), 500
+            # Формируем данные для RetailCRM
+            order_data = {
+                'customer': {
+                    'name': lead_data.get('name', ''),
+                    'phone': lead_data.get('phone', ''),
+                    'email': lead_data.get('email', ''),
+                    'address': lead_data.get('shipping', {}).get('addr1', ''),
+                    'city': lead_data.get('shipping', {}).get('city', ''),
+                    'comment': lead_data.get('records', [])
+                },
+                'items': lead_data.get('offers', []),
+                'delivery': lead_data.get('shipping', {}),
+                'discounts': lead_data.get('discounts', [])
+            }
+            
+            # Получаем остатки из RetailCRM
+            inventory = get_retailcrm_inventory()
+            
+            # Создаем заказ в RetailCRM
+            result = process_taplink_order(order_data, inventory)
+            
+            if result['success']:
+                logger.info(f"Order created successfully in RetailCRM: {result.get('order_id')}")
+                return jsonify({
+                    'success': True,
+                    'order_id': result.get('order_id'),
+                    'message': 'Order processed successfully'
+                })
             else:
-                logger.error(f"Failed to process lead data: {lead_data}")
-                return jsonify({'error': 'Failed to process lead data'}), 400
+                logger.error(f"Failed to process lead data: {result.get('error')}")
+                return jsonify({
+                    'success': False,
+                    'error': result.get('error')
+                }), 400
         else:
             logger.info(f"Received unknown action: {action}")
             return jsonify({'message': 'Unknown action received'}), 200
