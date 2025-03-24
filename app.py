@@ -5,7 +5,8 @@ import logging
 import sys
 import hmac
 import hashlib
-from create_order import create_order_in_crm
+from retailcrm_service import create_order_in_crm
+import json
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -32,16 +33,15 @@ def index():
     """
     return jsonify({'status': 'ok', 'message': 'Taplink to RetailCRM connector is running'})
 
-
 @app.route('/webhook/taplink', methods=['POST'])
-def taplink_webhook():
+def process_taplink_webhook():
     """
-    Эндпоинт для получения вебхуков от Taplink
+    Обрабатывает вебхуки от Taplink
     """
     try:
-        # Получаем тело запроса
-        data = request.get_data()
-        logger.info(f"Received webhook data: {data.decode('utf-8')}")
+        # Получаем данные из запроса
+        data = request.get_json()
+        logger.info(f"Received webhook data: {json.dumps(data, indent=2)}")
         
         # Получаем подпись из заголовка
         signature = request.headers.get('taplink-signature')
@@ -72,14 +72,10 @@ def taplink_webhook():
             # Создаем заказ в RetailCRM
             create_order_in_crm(lead_data)
     except Exception as e:
-        logger.error(f"Unexpected error in webhook handler: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error processing webhook: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
-
-            
-
-
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
