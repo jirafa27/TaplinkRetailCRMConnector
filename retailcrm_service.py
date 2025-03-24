@@ -411,12 +411,12 @@ def process_order_data(order_data: dict) -> dict:
         # Получаем данные из webhook
         records = order_data.get('records', [])
         
-        customer_data = {}  
+        customer_data = {}
+        
         # Извлекаем данные клиента из records
         for record in records:
             title = record.get('title', '')
             value = record.get('value', '')
-            title = record.get('title', '')
             
             if title == 'Имя':  # Имя
                 customer_data['firstName'] = value
@@ -431,7 +431,7 @@ def process_order_data(order_data: dict) -> dict:
             elif title == 'Дата доставки':  # Дата доставки
                 customer_data['delivery_date'] = value
             elif title == 'Способ оплаты':  # Способ оплаты
-                customer_data['payment_type'] = value.lower()
+                customer_data['payment_type'] = value
             elif title == 'Примечание':
                 customer_data['comment'] = value
             elif title == 'Промокод':
@@ -455,21 +455,21 @@ def process_order_data(order_data: dict) -> dict:
         
         # Формируем полный адрес
         address_parts = []
-        if customer_data['city']:
+        if customer_data.get('city'):
             address_parts.append(customer_data['city'])
-        if customer_data['street']:
+        if customer_data.get('street', None):
             address_parts.append(f"ул. {customer_data['street']}")
-        if customer_data['building']:
+        if customer_data.get('building', None):
             address_parts.append(f"д. {customer_data['building']}")
-        if customer_data['housing']:
+        if customer_data.get('housing', None):
             address_parts.append(f"корп. {customer_data['housing']}")
-        if customer_data['house']:
+        if customer_data.get('house', None):
             address_parts.append(f"стр. {customer_data['house']}")
-        if customer_data['flat']:
+        if customer_data.get('flat', None):
             address_parts.append(f"кв. {customer_data['flat']}")
-        if customer_data['block']:
+        if customer_data.get('block', None):
             address_parts.append(f"подъезд {customer_data['block']}")
-        if customer_data['floor']:
+        if customer_data.get('floor', None):
             address_parts.append(f"этаж {customer_data['floor']}")
             
         customer_data['address'] = ', '.join(address_parts)
