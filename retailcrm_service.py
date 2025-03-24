@@ -397,6 +397,112 @@ def prepare_order_items(items):
     return available_items, total_sum
 
 
+def process_order_data(order_data: dict) -> dict:
+    """
+    Преобразует данные заказа из формата Taplink в формат для RetailCRM
+    
+    Args:
+        order_data (dict): Данные заказа из Taplink
+        
+    Returns:
+        dict: Преобразованные данные заказа
+    """
+    try:
+        # Получаем данные из webhook
+        records = order_data.get('records', [])
+        
+        customer_data = {}  
+        # Извлекаем данные клиента из records
+        for record in records:
+            title = record.get('title', '')
+            value = record.get('value', '')
+            title = record.get('title', '')
+            
+            if title == 'Имя':  # Имя
+                customer_data['firstName'] = value
+            elif title == 'Фамилия':
+                customer_data['lastName'] = value
+            elif title == 'Отчество':
+                customer_data['patronymic'] = value
+            elif title == 'Телефон':  # Телефон
+                customer_data['phone'] = value
+            elif title == 'Время доставки':  # Время доставки
+                customer_data['delivery_time'] = value
+            elif title == 'Дата доставки':  # Дата доставки
+                customer_data['delivery_date'] = value
+            elif title == 'Способ оплаты':  # Способ оплаты
+                customer_data['payment_type'] = value.lower()
+            elif title == 'Примечание':
+                customer_data['comment'] = value
+            elif title == 'Промокод':
+                customer_data['promo_code'] = value
+            elif title == 'Город':
+                customer_data['city'] = value
+            elif title == 'Улица':
+                customer_data['street'] = value
+            elif title == 'Дом':
+                customer_data['building'] = value
+            elif title == 'Кв./офис':
+                customer_data['flat'] = value
+            elif title == 'Этаж':
+                customer_data['floor'] = value
+            elif title == 'Подъезд':
+                customer_data['block'] = value
+            elif title == 'Корпус':
+                customer_data['housing'] = value
+            elif title == 'Строение':
+                customer_data['house'] = value
+        
+        # Формируем полный адрес
+        address_parts = []
+        if customer_data['city']:
+            address_parts.append(customer_data['city'])
+        if customer_data['street']:
+            address_parts.append(f"ул. {customer_data['street']}")
+        if customer_data['building']:
+            address_parts.append(f"д. {customer_data['building']}")
+        if customer_data['housing']:
+            address_parts.append(f"корп. {customer_data['housing']}")
+        if customer_data['house']:
+            address_parts.append(f"стр. {customer_data['house']}")
+        if customer_data['flat']:
+            address_parts.append(f"кв. {customer_data['flat']}")
+        if customer_data['block']:
+            address_parts.append(f"подъезд {customer_data['block']}")
+        if customer_data['floor']:
+            address_parts.append(f"этаж {customer_data['floor']}")
+            
+        customer_data['address'] = ', '.join(address_parts)
+        
+        # Преобразуем товары
+        items = []
+        for offer in order_data.get('offers', []):
+            # Ищем артикул товара по названию в маппинге
+            article = None
+            for art, name in PRODUCTS_MAPPING.items():
+                if name == offer.get('title'):
+                    article = art
+                    break
+            
+            if article:
+                items.append({
+                    'article': article,
+                    'nominal': '1',  # Используем значение по умолчанию
+                    'quantity': int(offer.get('amount', 1)),
+                    'price': float(offer.get('price', 0))
+                })
+            else:
+                logger.warning(f"Product not found in mapping: {offer.get('title')}")
+        
+        return {
+            'customer': customer_data,
+            'items': items
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing order data: {str(e)}")
+        raise
+
 
 def create_order_in_crm(order_data):
     """
@@ -409,18 +515,8 @@ def create_order_in_crm(order_data):
         dict: Результат обработки заказа
     """
     try:
-        # Проверяем наличие товаров
-        items = order_data.get('items', [])
-        logger.info(f"Received items: {json.dumps(items, indent=2)}")
-        
-        if not items:
-            logger.error("No items in order")
-            return {
-                'success': False,
-                'error': 'No items in order',
-                'items': []
-            }
-            
+        # Преобразуем данные заказа
+        order_data = process_order_data(order_data)
         # Обновляем или создаем клиента
         customer_data_crm = create_or_update_customer_in_crm(order_data['customer'])
         if not customer_data_crm:
@@ -432,7 +528,7 @@ def create_order_in_crm(order_data):
             }
         
         # Подготавливаем товары
-        available_items, total_sum = prepare_order_items(items)
+        available_items, total_sum = prepare_order_items(order_data['items'])
         logger.info(f"Prepared items: {json.dumps(available_items, indent=2)}")
         
         if not available_items:
@@ -479,43 +575,102 @@ def create_order_in_crm(order_data):
 
 def main():
     """
-    Основная функция для создания заказа
+    Основная функция для создания тестового заказа
     """
     # Пример данных заказа
     order_data = {
-        'items': [
-            {
-                'article': '1',
-                'nominal': '1000',
-                'quantity': 1,
-                'price': 1000
-            },
-            {
-                'article': '2',
-                'nominal': '1000',
-                'quantity': 1,
-                'price': 1000
-            }
-        ],
-        'customer': {
-            'firstName': 'Тест',
-            'lastName': 'Тест',
-            'patronymic': 'Тест',
-            'phone': '+79001234567',
-            'city': 'Москва',
-            'street': 'ул. ТестоваяПурум',
-            'building': '12',  # Дом
-            'flat': '12',  # Номер квартиры/офиса
-            'floor': '2',  # Этаж
-            'block': '1',  # Подъезд
-            'house': '1',  # Строение
-            'housing': 'А',  # Корпус
-            'delivery_date': '2024-03-20',  # Дата доставки
-            'delivery_time': '14:00',  # Время доставки
-            'payment_type': 'cash',  # Способ оплаты cash, bank-card
-            'comment': 'Тестовый заказ',
-            'promo_code': 'TEST123'  # Промокод
-        }
+            'profile_id': '5567465',
+            'status_id': '1',
+            'nickname': 'indeika_smr',
+            'contact_id': '32192893',
+            'block_id': '',
+            'order_id': '25534116',
+            'order_number': '1522',
+            'order_version': '0',
+            'order_status_id': '1',
+            'purpose': 'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ',
+            'tms_modify': '2025-03-24T12:49:57Z',
+            'budget': '560',
+            'currency_title': '₽',
+            'currency_code': 'RUB',
+            'utm_source': '',
+            'utm_medium': '',
+            'utm_campaign': '',
+            'utm_content': '',
+            'utm_term': '',
+            'page_link': 'https://taplink.cc/indeika_smr/m/',
+            'page_title': 'Товары',
+            'lead_id': '52658682',
+            'ip': '213.139.74.94',
+            'lead_number': '1594',
+            'date_created': '2025-03-24',
+            'tms_created': '2025-03-24T12:49:57Z',
+            'records': [
+                {'type': '3', 'value': 'Тест', 'idx': '1', 'title': 'Имя'},
+                {'type': '1', 'value': 'Тест', 'idx': '19', 'title': 'Фамилия'},
+                {'type': '1', 'value': 'Тестович', 'idx': '21', 'title': 'Отчество'},
+                {'type': '7', 'value': '79001234567', 'idx': '3', 'title': 'Телефон'},
+                {'type': '5', 'value': '13:00', 'idx': '4', 'title': 'Время доставки'},
+                {'type': '13', 'value': '28.03.2025', 'idx': '5', 'title': 'Дата доставки '},
+                {'type': '8', 'value': 'QR-код', 'idx': '6', 'title': 'Способ оплаты'},
+                {'type': '1', 'value': 'Пу', 'idx': '17', 'title': 'Примечание'},
+                {'type': '1', 'value': 'пу', 'idx': '18', 'title': 'Промокод'},
+                {'type': '1', 'value': 'Москва', 'idx': '7', 'title': 'Город'},
+                {'type': '1', 'value': 'фУЦКПЕЫИ', 'idx': '8', 'title': 'Улица'},
+                {'type': '1', 'value': '1', 'idx': '12', 'title': 'Дом'},
+                {'type': '1', 'value': '1', 'idx': '13', 'title': 'Корпус'},
+                {'type': '1', 'value': '1', 'idx': '16', 'title': 'Строение'},
+                {'type': '1', 'value': '12', 'idx': '11', 'title': 'Кв./офис'},
+                {'type': '1', 'value': '1', 'idx': '14', 'title': 'Подъезд'},
+                {'type': '1', 'value': '1', 'idx': '15', 'title': 'Этаж'}
+            ],
+            'email': '',
+            'phone': '79001234567',
+            'fullname': 'Тест',
+            'records_extended': [
+                {'idx': 'a', 'name': 'lead_number', 'type': 'number', 'value': '1594'},
+                {'idx': 'b', 'name': 'contacts', 'type': 'text', 'value': [
+                    'Имя: Тест',
+                    'Фамилия: Тест',
+                    'Отчество: Тестович',
+                    'Телефон: +79001234567',
+                    'Время доставки: 13:00',
+                    'Дата доставки : 28.03.2025',
+                    'Способ оплаты: QR-код',
+                    'Примечание: Пу',
+                    'Промокод: пу',
+                    'Город: Москва',
+                    'Улица: фУЦКПЕЫИ',
+                    'Дом: 1',
+                    'Корпус: 1',
+                    'Строение: 1',
+                    'Кв./офис: 12',
+                    'Подъезд: 1',
+                    'Этаж: 1'
+                ]},
+                {'idx': 'c', 'name': 'cart', 'type': 'text', 'value': ['МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ, 1 шт., 560.00 RUB']},
+                {'idx': 'd', 'name': 'budget', 'type': 'number', 'value': '560'},
+                {'idx': 'e', 'name': 'shipping', 'type': 'text'},
+                {'idx': 'f', 'name': 'shipping_price', 'type': 'number', 'value': ''},
+                {'idx': 'g', 'name': 'order_link', 'type': 'string', 'value': 'https://taplink.io/payments/1859ea4/'},
+                {'idx': 'h', 'name': 'weight', 'type': 'number', 'value': '0'},
+                {'idx': 'i', 'name': 'order_number', 'type': 'number', 'value': '1522'},
+                {'idx': 'j', 'name': 'page_link', 'type': 'string', 'value': 'https://taplink.cc/indeika_smr/m/'},
+                {'idx': 'k', 'name': 'discounts', 'type': 'string', 'value': ''}
+            ],
+            'offers': [
+                {
+                    'offer_id': '21188097',
+                    'product_id': '12445287',
+                    'title': 'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ',
+                    'amount': '1',
+                    'price': '560',
+                    'budget': '560',
+                    'price_discount': '',
+                    'weight': '0'
+                }
+            ],
+            'username': 'indeika_smr'
     }
     
     # Обрабатываем заказ

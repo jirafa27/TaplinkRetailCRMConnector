@@ -41,7 +41,6 @@ def process_taplink_webhook():
     try:
         # Получаем тело запроса как строку
         data = request.get_data()
-        logger.info(f"Received webhook data: {data.decode('utf-8')}")
         
         # Получаем подпись из заголовка
         signature = request.headers.get('taplink-signature')
