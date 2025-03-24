@@ -39,9 +39,9 @@ def process_taplink_webhook():
     Обрабатывает вебхуки от Taplink
     """
     try:
-        # Получаем данные из запроса
-        data = request.get_json()
-        logger.info(f"Received webhook data: {json.dumps(data, indent=2)}")
+        # Получаем тело запроса как строку
+        data = request.get_data()
+        logger.info(f"Received webhook data: {data.decode('utf-8')}")
         
         # Получаем подпись из заголовка
         signature = request.headers.get('taplink-signature')
@@ -50,7 +50,7 @@ def process_taplink_webhook():
             logger.warning("No signature received in webhook request")
             return jsonify({'error': 'No signature provided'}), 401
             
-        # Проверяем подпись (согласно документации)
+        # Проверяем подпись
         expected_signature = hmac.new(
             TAPLINK_WEBHOOK_SECRET.encode('utf-8'),
             data,
@@ -64,13 +64,21 @@ def process_taplink_webhook():
         # Парсим JSON данные
         webhook_data = request.get_json()
         logger.info(f"Received webhook from Taplink: {webhook_data}")
+        
         # Проверяем тип события
         action = webhook_data.get('action')
         if action == 'leads.created':
             # Обработка нового лида
             lead_data = webhook_data.get('data', {})
             # Создаем заказ в RetailCRM
-            create_order_in_crm(lead_data)
+            result = create_order_in_crm(lead_data)
+            return jsonify(result)
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Unsupported action: {action}'
+            }), 400
+            
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return jsonify({
