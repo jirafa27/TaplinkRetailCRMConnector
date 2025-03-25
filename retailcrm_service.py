@@ -362,6 +362,7 @@ def prepare_order_items(items):
         nominal = item.get('nominal')
         requested_quantity = item.get('quantity', 1)
         price = item.get('price', 0)
+        weight = float(item.get('weight', 1000))
         
         if not article or not nominal:
             logger.error(f"Missing article or nominal in item: {item}")
@@ -389,7 +390,8 @@ def prepare_order_items(items):
             'purchasePrice': price,
             'comment': '',
             'markingCodes': [],
-            'externalIds': []
+            'externalIds': [],
+            'weight': weight
         })
         
         total_sum += requested_quantity * price
@@ -483,11 +485,19 @@ def process_order_data(order_data: dict) -> dict:
                 if name == offer.get('title'):
                     article = art
                     break
-            
-            if article:
+
+            if offer.get('options'):
+                for option in offer.get('options', []):
+                    items.append({
+                        'article': article,
+                        'nominal': option.split(' ')[1],
+                        'quantity': int(offer.get('amount', 1)),
+                        'price': float(option.split(' ')[1])
+                    })
+            elif article:
                 items.append({
                     'article': article,
-                    'nominal': '1',  # Используем значение по умолчанию
+                    'nominal': '1',
                     'quantity': int(offer.get('amount', 1)),
                     'price': float(offer.get('price', 0))
                 })
@@ -529,7 +539,6 @@ def create_order_in_crm(order_data):
         
         # Подготавливаем товары
         available_items, total_sum = prepare_order_items(order_data['items'])
-        logger.info(f"Prepared items: {json.dumps(available_items, indent=2)}")
         
         if not available_items:
             logger.error("No valid items after preparation")
@@ -579,100 +588,124 @@ def main():
     """
     # Пример данных заказа
     order_data = {
-            'profile_id': '5567465',
-            'status_id': '1',
-            'nickname': 'indeika_smr',
-            'contact_id': '32192893',
-            'block_id': '',
-            'order_id': '25534116',
-            'order_number': '1522',
-            'order_version': '0',
-            'order_status_id': '1',
-            'purpose': 'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ',
-            'tms_modify': '2025-03-24T12:49:57Z',
-            'budget': '560',
-            'currency_title': '₽',
-            'currency_code': 'RUB',
-            'utm_source': '',
-            'utm_medium': '',
-            'utm_campaign': '',
-            'utm_content': '',
-            'utm_term': '',
-            'page_link': 'https://taplink.cc/indeika_smr/m/',
-            'page_title': 'Товары',
-            'lead_id': '52658682',
-            'ip': '213.139.74.94',
-            'lead_number': '1594',
-            'date_created': '2025-03-24',
-            'tms_created': '2025-03-24T12:49:57Z',
-            'records': [
-                {'type': '3', 'value': 'Тест', 'idx': '1', 'title': 'Имя'},
-                {'type': '1', 'value': 'Тест', 'idx': '19', 'title': 'Фамилия'},
-                {'type': '1', 'value': 'Тестович', 'idx': '21', 'title': 'Отчество'},
-                {'type': '7', 'value': '79001234567', 'idx': '3', 'title': 'Телефон'},
-                {'type': '5', 'value': '13:00', 'idx': '4', 'title': 'Время доставки'},
-                {'type': '13', 'value': '28.03.2025', 'idx': '5', 'title': 'Дата доставки '},
-                {'type': '8', 'value': 'QR-код', 'idx': '6', 'title': 'Способ оплаты'},
-                {'type': '1', 'value': 'Пу', 'idx': '17', 'title': 'Примечание'},
-                {'type': '1', 'value': 'пу', 'idx': '18', 'title': 'Промокод'},
-                {'type': '1', 'value': 'Москва', 'idx': '7', 'title': 'Город'},
-                {'type': '1', 'value': 'фУЦКПЕЫИ', 'idx': '8', 'title': 'Улица'},
-                {'type': '1', 'value': '1', 'idx': '12', 'title': 'Дом'},
-                {'type': '1', 'value': '1', 'idx': '13', 'title': 'Корпус'},
-                {'type': '1', 'value': '1', 'idx': '16', 'title': 'Строение'},
-                {'type': '1', 'value': '12', 'idx': '11', 'title': 'Кв./офис'},
-                {'type': '1', 'value': '1', 'idx': '14', 'title': 'Подъезд'},
-                {'type': '1', 'value': '1', 'idx': '15', 'title': 'Этаж'}
-            ],
-            'email': '',
-            'phone': '79001234567',
-            'fullname': 'Тест',
-            'records_extended': [
-                {'idx': 'a', 'name': 'lead_number', 'type': 'number', 'value': '1594'},
-                {'idx': 'b', 'name': 'contacts', 'type': 'text', 'value': [
-                    'Имя: Тест',
-                    'Фамилия: Тест',
-                    'Отчество: Тестович',
-                    'Телефон: +79001234567',
-                    'Время доставки: 13:00',
-                    'Дата доставки : 28.03.2025',
-                    'Способ оплаты: QR-код',
-                    'Примечание: Пу',
-                    'Промокод: пу',
-                    'Город: Москва',
-                    'Улица: фУЦКПЕЫИ',
-                    'Дом: 1',
-                    'Корпус: 1',
-                    'Строение: 1',
-                    'Кв./офис: 12',
-                    'Подъезд: 1',
-                    'Этаж: 1'
-                ]},
-                {'idx': 'c', 'name': 'cart', 'type': 'text', 'value': ['МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ, 1 шт., 560.00 RUB']},
-                {'idx': 'd', 'name': 'budget', 'type': 'number', 'value': '560'},
-                {'idx': 'e', 'name': 'shipping', 'type': 'text'},
-                {'idx': 'f', 'name': 'shipping_price', 'type': 'number', 'value': ''},
-                {'idx': 'g', 'name': 'order_link', 'type': 'string', 'value': 'https://taplink.io/payments/1859ea4/'},
-                {'idx': 'h', 'name': 'weight', 'type': 'number', 'value': '0'},
-                {'idx': 'i', 'name': 'order_number', 'type': 'number', 'value': '1522'},
-                {'idx': 'j', 'name': 'page_link', 'type': 'string', 'value': 'https://taplink.cc/indeika_smr/m/'},
-                {'idx': 'k', 'name': 'discounts', 'type': 'string', 'value': ''}
-            ],
-            'offers': [
-                {
-                    'offer_id': '21188097',
-                    'product_id': '12445287',
-                    'title': 'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ',
-                    'amount': '1',
-                    'price': '560',
-                    'budget': '560',
-                    'price_discount': '',
-                    'weight': '0'
-                }
-            ],
-            'username': 'indeika_smr'
-    }
-    
+                    "profile_id": "5567465",
+                    "status_id": "1",
+                    "nickname": "indeika_smr",
+                    "contact_id": "32192893",
+                    "block_id": "",
+                    "order_id": "25535141",
+                    "order_number": "1528",
+                    "order_version": "0",
+                    "order_status_id": "1",
+                    "purpose": "indeika_smr",
+                    "tms_modify": "2025-03-24T17:00:30Z",
+                    "budget": "7100",
+                    "currency_title": "₽",
+                    "currency_code": "RUB",
+                    "utm_source": "",
+                    "utm_medium": "",
+                    "utm_campaign": "",
+                    "utm_content": "",
+                    "utm_term": "",
+                    "page_link": "https://taplink.cc/indeika_smr/m/",
+                    "page_title": "Товары",
+                    "lead_id": "52660099",
+                    "ip": "213.139.74.94",
+                    "lead_number": "1600",
+                    "date_created": "2025-03-24",
+                    "tms_created": "2025-03-24T17:00:30Z",
+                    "records": [
+                        { "type": "3", "value": "Тест", "idx": "1", "title": "Имя" },
+                        { "type": "7", "value": "79001234567", "idx": "3", "title": "Телефон" },
+                        { "type": "5", "value": "23:00", "idx": "4", "title": "Время доставки" },
+                        { "type": "13", "value": "28.03.2025", "idx": "5", "title": "Дата доставки " },
+                        { "type": "8", "value": "QR-код", "idx": "6", "title": "Способ оплаты" },
+                        { "type": "1", "value": "Asfdbg", "idx": "7", "title": "Город" },
+                        { "type": "1", "value": "qdewfasevgb", "idx": "8", "title": "Улица" },
+                        { "type": "1", "value": "4", "idx": "12", "title": "Дом" },
+                        { "type": "1", "value": "1", "idx": "11", "title": "Кв./офис" }
+                    ],
+                    "email": "",
+                    "phone": "79001234567",
+                    "fullname": "Тест",
+                    "records_extended": [
+                        { "idx": "a", "name": "lead_number", "type": "number", "value": "1600" },
+                        {
+                        "idx": "b",
+                        "name": "contacts",
+                        "type": "text",
+                        "value": [
+                            "Имя: Тест",
+                            "Телефон: +79001234567",
+                            "Время доставки: 23:00",
+                            "Дата доставки : 28.03.2025",
+                            "Способ оплаты: QR-код",
+                            "Город: Asfdbg",
+                            "Улица: qdewfasevgb",
+                            "Дом: 4",
+                            "Кв./офис: 1"
+                        ]
+                        },
+                        {
+                        "idx": "c",
+                        "name": "cart",
+                        "type": "text",
+                        "value": [
+                            "ПОДАРОЧНЫЙ СЕРТИФИКАТ, 1 шт., 0.00 RUB",
+                            "ПОДАРОЧНЫЙ СЕРТИФИКАТ, Номинал 500 ₽, Номинал 1000 ₽, Номинал 2000 ₽, Номинал 3000 ₽, 1 шт., 6 500.00 RUB",
+                            "ГОЛУБЦЫ С РИСОМ И ГРИБАМИ, 1 шт., 600.00 RUB"
+                        ]
+                        },
+                        { "idx": "d", "name": "budget", "type": "number", "value": "7100" },
+                        { "idx": "e", "name": "shipping", "type": "text" },
+                        { "idx": "f", "name": "shipping_price", "type": "number", "value": "" },
+                        { "idx": "g", "name": "order_link", "type": "string", "value": "https://taplink.io/payments/185a2a5/" },
+                        { "idx": "h", "name": "weight", "type": "number", "value": "0" },
+                        { "idx": "i", "name": "order_number", "type": "number", "value": "1528" },
+                        { "idx": "j", "name": "page_link", "type": "string", "value": "https://taplink.cc/indeika_smr/m/" },
+                        { "idx": "k", "name": "discounts", "type": "string", "value": "" }
+                    ],
+                    "offers": [
+                        {
+                        "offer_id": "20996163",
+                        "product_id": "12306680",
+                        "title": "ПОДАРОЧНЫЙ СЕРТИФИКАТ",
+                        "amount": "1",
+                        "price": "0",
+                        "budget": "0",
+                        "price_discount": "",
+                        "weight": "0"
+                        },
+                        {
+                        "offer_id": "20996163-1393796-1393797-1393798-1393799",
+                        "product_id": "12306680",
+                        "title": "ПОДАРОЧНЫЙ СЕРТИФИКАТ",
+                        "options": [
+                            "Номинал 500 ₽",
+                            "Номинал 1000 ₽",
+                            "Номинал 2000 ₽",
+                            "Номинал 3000 ₽"
+                        ],
+                        "amount": "1",
+                        "price": "6500",
+                        "budget": "6500",
+                        "price_discount": "",
+                        "weight": "0"
+                        },
+                        {
+                        "offer_id": "21188102",
+                        "product_id": "12445289",
+                        "title": "ГОЛУБЦЫ С РИСОМ И ГРИБАМИ",
+                        "amount": "1",
+                        "price": "600",
+                        "budget": "600",
+                        "price_discount": "",
+                        "weight": "0"
+                        }
+                    ],
+                    "username": "indeika_smr"
+}
+
     # Обрабатываем заказ
     result = create_order_in_crm(order_data)
     
