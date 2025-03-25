@@ -1,8 +1,6 @@
 import os
 from dotenv import load_dotenv
-import requests
 import logging
-import sys
 import json
 import retailcrm
 import time
@@ -114,6 +112,7 @@ def create_customer_in_crm(customer_data):
         response = crm.customer_create(customer)
         response_data = response.get_response()
         if response_data.get('success'):
+            logger.info(f"Customer created in RetailCRM: {response_data}")
             return response_data
         else:
             logger.error(f"Error creating customer in RetailCRM: {response_data.get('errorMsg')}")
@@ -186,8 +185,8 @@ def get_customer_changes(current_data: dict, new_data: dict) -> dict:
         'street': new_data.get('street', ''),
         'building': new_data.get('building', ''),
         'flat': new_data.get('flat', ''),
-        'floor': new_data.get('floor', ''),
-        'block': new_data.get('block', ''),
+        'floor': new_data.get('floor', 0),
+        'block': new_data.get('block', 0),
         'house': new_data.get('house', ''),
         'housing': new_data.get('housing', '')
     }
@@ -222,6 +221,7 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
             if not customer_data_crm:
                 logger.error("Failed to get created customer data")
                 return None
+            return customer_data_crm
         else:
             logger.error("Failed to create customer")
             return None
@@ -279,7 +279,7 @@ def prepare_order_data(customer_data_crm, items, total_sum):
     
     order_data = {
         'number': f"TAP-{int(time.time())}",
-        'externalId': f"test-taplink-{int(time.time())}",
+        'externalId': f"taplink-{int(time.time())}",
         'privilegeType': 'none',
         'countryIso': 'RU',
         'createdAt': current_time,
@@ -287,7 +287,7 @@ def prepare_order_data(customer_data_crm, items, total_sum):
         'lastName': customer_data_crm.get('lastName', ''),
         'firstName': customer_data_crm.get('firstName', ''),
         'patronymic': customer_data_crm.get('patronymic', ''),
-        'phone': customer_data_crm.get('phone', ''),
+        'phone': customer_data_crm.get('phones')[0].get('number') if customer_data_crm.get('phones') else '',
         'email': customer_data_crm.get('email', ''),
         'call': False,
         'expired': False,
@@ -313,14 +313,14 @@ def prepare_order_data(customer_data_crm, items, total_sum):
             'netCost': 0,
             'address': {
                 'text': customer_data_crm.get('address', {}).get('text', ''),
-                'city': customer_data_crm.get('address', {}).get('city', ''),
-                'street': customer_data_crm.get('address', {}).get('street', ''),
-                'building': customer_data_crm.get('address', {}).get('building', ''),
-                'flat': customer_data_crm.get('address', {}).get('flat', ''),
-                'floor': customer_data_crm.get('address', {}).get('floor', ''),
-                'block': customer_data_crm.get('address', {}).get('block', ''),
-                'house': customer_data_crm.get('address', {}).get('house', ''),
-                'housing': customer_data_crm.get('address', {}).get('housing', ''),
+                'city': customer_data_crm.get('address', {}).get('city', ''), # Город
+                'street': customer_data_crm.get('address', {}).get('street', ''), # Улица
+                'building': customer_data_crm.get('address', {}).get('building', ''), # Дом
+                'flat': customer_data_crm.get('address', {}).get('flat', ''), # Квартира
+                'floor': customer_data_crm.get('address', {}).get('floor', 0), # Этаж
+                'block': customer_data_crm.get('address', {}).get('block', 0), # Подъезд
+                'house': customer_data_crm.get('address', {}).get('house', ''), # Корпус
+                'housing': customer_data_crm.get('address', {}).get('housing', ''), # Строение
                 'countryIso': 'RU'
             },
             'date': customer_data_crm.get('delivery_date'),
@@ -558,7 +558,6 @@ def create_order_in_crm(order_data):
         
         # Подготавливаем данные заказа
         prepared_order_data = prepare_order_data(customer_data_crm, available_items, total_sum)
-        
         # Логируем данные заказа для отладки
         logger.info(f"Prepared order data: {json.dumps(prepared_order_data, indent=2)}")
         
@@ -589,127 +588,3 @@ def create_order_in_crm(order_data):
             'error': str(e),
             'items': []
         }
-
-def main():
-    """
-    Основная функция для создания тестового заказа
-    """
-    # Пример данных заказа
-    order_data = {
-                    "profile_id": "5567465",
-                    "status_id": "1",
-                    "nickname": "indeika_smr",
-                    "contact_id": "32192893",
-                    "block_id": "",
-                    "order_id": "25535141",
-                    "order_number": "1528",
-                    "order_version": "0",
-                    "order_status_id": "1",
-                    "purpose": "indeika_smr",
-                    "tms_modify": "2025-03-24T17:00:30Z",
-                    "budget": "7100",
-                    "currency_title": "₽",
-                    "currency_code": "RUB",
-                    "utm_source": "",
-                    "utm_medium": "",
-                    "utm_campaign": "",
-                    "utm_content": "",
-                    "utm_term": "",
-                    "page_link": "https://taplink.cc/indeika_smr/m/",
-                    "page_title": "Товары",
-                    "lead_id": "52660099",
-                    "ip": "213.139.74.94",
-                    "lead_number": "1600",
-                    "date_created": "2025-03-24",
-                    "tms_created": "2025-03-24T17:00:30Z",
-                    "records": [
-                        { "type": "3", "value": "Тест", "idx": "1", "title": "Имя" },
-                        { "type": "7", "value": "79001234567", "idx": "3", "title": "Телефон" },
-                        { "type": "5", "value": "23:00", "idx": "4", "title": "Время доставки" },
-                        { "type": "13", "value": "28.03.2025", "idx": "5", "title": "Дата доставки " },
-                        { "type": "8", "value": "QR-код", "idx": "6", "title": "Способ оплаты" },
-                        { "type": "1", "value": "Asfdbg", "idx": "7", "title": "Город" },
-                        { "type": "1", "value": "qdewfasevgb", "idx": "8", "title": "Улица" },
-                        { "type": "1", "value": "4", "idx": "12", "title": "Дом" },
-                        { "type": "1", "value": "111", "idx": "13", "title": "Корпус" },
-                        { "type": "1", "value": "1", "idx": "11", "title": "Кв./офис" },
-                    ],
-                    "email": "",
-                    "phone": "79001234567",
-                    "fullname": "Тест",
-                    "records_extended": [
-                        { "idx": "a", "name": "lead_number", "type": "number", "value": "1600" },
-                        {
-                        "idx": "b",
-                        "name": "contacts",
-                        "type": "text",
-                        "value": [
-                            "Имя: Тест",
-                            "Телефон: +79001234567",
-                            "Время доставки: 23:00",
-                            "Дата доставки : 28.03.2025",
-                            "Способ оплаты: QR-код",
-                            "Город: Asfdbg",
-                            "Улица: qdewfasevgb",
-                            "Дом: 4",
-                            "Кв./офис: 1"
-                        ]
-                        },
-                        {
-                        "idx": "c",
-                        "name": "cart",
-                        "type": "text",
-                        "value": [
-                            "ПОДАРОЧНЫЙ СЕРТИФИКАТ, 1 шт., 0.00 RUB",
-                            "ПОДАРОЧНЫЙ СЕРТИФИКАТ, Номинал 500 ₽, Номинал 1000 ₽, Номинал 2000 ₽, Номинал 3000 ₽, 1 шт., 6 500.00 RUB",
-                            "ГОЛУБЦЫ С РИСОМ И ГРИБАМИ, 1 шт., 600.00 RUB"
-                        ]
-                        },
-                        { "idx": "d", "name": "budget", "type": "number", "value": "7100" },
-                        { "idx": "e", "name": "shipping", "type": "text" },
-                        { "idx": "f", "name": "shipping_price", "type": "number", "value": "" },
-                        { "idx": "g", "name": "order_link", "type": "string", "value": "https://taplink.io/payments/185a2a5/" },
-                        { "idx": "h", "name": "weight", "type": "number", "value": "0" },
-                        { "idx": "i", "name": "order_number", "type": "number", "value": "1528" },
-                        { "idx": "j", "name": "page_link", "type": "string", "value": "https://taplink.cc/indeika_smr/m/" },
-                        { "idx": "k", "name": "discounts", "type": "string", "value": "" }
-                    ],
-                    "offers": [
-                        {
-                        "offer_id": "20996163-1393796-1393797-1393798-1393799",
-                        "product_id": "12306680",
-                        "title": "ПОДАРОЧНЫЙ СЕРТИФИКАТ",
-                        "options": [
-                            "Номинал 500 ₽",
-                            "Номинал 1000 ₽",
-                            "Номинал 2000 ₽",
-                            "Номинал 3000 ₽"
-                        ],
-                        "amount": "1",
-                        "price": "6500",
-                        "budget": "6500",
-                        "price_discount": "",
-                        "weight": "0"
-                        },
-                        {
-                        "offer_id": "21188102",
-                        "product_id": "12445289",
-                        "title": "ГОЛУБЦЫ С РИСОМ И ГРИБАМИ",
-                        "amount": "1",
-                        "price": "600",
-                        "budget": "600",
-                        "price_discount": "",
-                        "weight": "0"
-                        }
-                    ],
-                    "username": "indeika_smr"
-    }
-    
-    # Обрабатываем заказ
-    result = create_order_in_crm(order_data)
-    
-    # Выводим результат
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-if __name__ == '__main__':
-    main() 
