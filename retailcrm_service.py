@@ -156,7 +156,16 @@ def get_address_changes(current_address: dict, new_address: dict) -> dict:
     """
     changes = {}
     for key, value in new_address.items():
-        if str(current_address.get(key)) != str(value):
+        current_value = current_address.get(key)
+        # Если оба значения None или пустые строки, пропускаем
+        if (current_value is None and value is None or current_value == '' and value == ''):
+            continue
+        # Если одно из значений None или пустая строка, а другое нет - считаем изменением
+        if (current_value is None or current_value == '') != (value is None or value == ''):
+            changes[key] = value
+            continue
+        # Для непустых значений сравниваем как строки
+        if str(current_value) != str(value):
             changes[key] = value
     
     if changes:
@@ -172,20 +181,20 @@ def get_customer_changes(current_data: dict, new_data: dict) -> dict:
     
     # Проверяем изменения в основных полях
     for field in ['firstName', 'lastName', 'patronymic']:
-        if current_data.get(field) != new_data.get(field):
-            changes[field] = new_data.get(field)
+        if current_data.get(field, '') != new_data.get(field, ''):
+            changes[field] = new_data.get(field, '')
     
     # Проверяем изменения в адресе
     current_address = current_data.get('address', {})
     new_address = {
-        'city': new_data.get('city'),
-        'street': new_data.get('street'),
-        'building': new_data.get('building'),
-        'flat': new_data.get('flat'),
-        'floor': new_data.get('floor'),
-        'block': new_data.get('block'),
-        'house': new_data.get('house'),
-        'housing': new_data.get('housing')
+        'city': new_data.get('city', ''),
+        'street': new_data.get('street', ''),
+        'building': new_data.get('building', ''),
+        'flat': new_data.get('flat', ''),
+        'floor': new_data.get('floor', ''),
+        'block': new_data.get('block', ''),
+        'house': new_data.get('house', ''),
+        'housing': new_data.get('housing', '')
     }
     
     address_changes = get_address_changes(current_address, new_address)
@@ -627,7 +636,8 @@ def main():
                         { "type": "1", "value": "Asfdbg", "idx": "7", "title": "Город" },
                         { "type": "1", "value": "qdewfasevgb", "idx": "8", "title": "Улица" },
                         { "type": "1", "value": "4", "idx": "12", "title": "Дом" },
-                        { "type": "1", "value": "1", "idx": "11", "title": "Кв./офис" }
+                        { "type": "1", "value": "111", "idx": "13", "title": "Корпус" },
+                        { "type": "1", "value": "1", "idx": "11", "title": "Кв./офис" },
                     ],
                     "email": "",
                     "phone": "79001234567",
