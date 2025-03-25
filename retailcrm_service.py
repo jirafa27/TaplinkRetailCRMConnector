@@ -363,6 +363,8 @@ def prepare_order_items(items):
         requested_quantity = item.get('quantity', 1)
         price = item.get('price', 0)
         weight = float(item.get('weight', 1000))
+        if article == '1':
+            weight = 0
         
         if not article or not nominal:
             logger.error(f"Missing article or nominal in item: {item}")
@@ -380,8 +382,7 @@ def prepare_order_items(items):
             'quantity': requested_quantity,
             'productName': product_name,
             'offer': {
-                'externalId': f"{article}-{nominal}",
-                'xmlId': f"{article}-{nominal}"
+                'externalId': f"{article}",
             },
             'status': 'new',
             'ordering': len(available_items) + 1,
@@ -393,6 +394,8 @@ def prepare_order_items(items):
             'externalIds': [],
             'weight': weight
         })
+        if article == '1':
+            available_items[-1]['offer']['externalId'] = f"{article}-{nominal}"
         
         total_sum += requested_quantity * price
     
@@ -496,8 +499,9 @@ def process_order_data(order_data: dict) -> dict:
                     })
             elif article:
                 items.append({
+                    'id': offer.get('offer_id'),
                     'article': article,
-                    'nominal': '1',
+                    'nominal': '1000',
                     'quantity': int(offer.get('amount', 1)),
                     'price': float(offer.get('price', 0))
                 })
@@ -667,16 +671,6 @@ def main():
                     ],
                     "offers": [
                         {
-                        "offer_id": "20996163",
-                        "product_id": "12306680",
-                        "title": "ПОДАРОЧНЫЙ СЕРТИФИКАТ",
-                        "amount": "1",
-                        "price": "0",
-                        "budget": "0",
-                        "price_discount": "",
-                        "weight": "0"
-                        },
-                        {
                         "offer_id": "20996163-1393796-1393797-1393798-1393799",
                         "product_id": "12306680",
                         "title": "ПОДАРОЧНЫЙ СЕРТИФИКАТ",
@@ -704,8 +698,8 @@ def main():
                         }
                     ],
                     "username": "indeika_smr"
-}
-
+    }
+    
     # Обрабатываем заказ
     result = create_order_in_crm(order_data)
     
