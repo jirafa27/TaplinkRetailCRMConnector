@@ -9,7 +9,7 @@ from retailcrm_service import create_order_in_crm
 
 # Настройка логирования
 # Создаем директорию для логов, если она не существует
-log_dir = 'logs'
+log_dir = '/var/log/taplink'
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
