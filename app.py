@@ -1,30 +1,53 @@
-from flask import Flask, request, jsonify
 import os
 from dotenv import load_dotenv
-import logging
-import sys
+from flask import Flask, request, jsonify
 import hmac
 import hashlib
+import logging
+import sys
 from retailcrm_service import create_order_in_crm
-import json
+
+# Настройка логирования
+# Создаем директорию для логов, если она не существует
+log_dir = 'logs'
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+# Настраиваем корневой логгер
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Настраиваем форматтер
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Настраиваем вывод в файл
+file_handler = logging.FileHandler(os.path.join(log_dir, 'app.log'), encoding='utf-8')
+file_handler.setFormatter(formatter)
+root_logger.addHandler(file_handler)
+
+# Настраиваем вывод ошибок в отдельный файл
+error_file_handler = logging.FileHandler(os.path.join(log_dir, 'error.log'), encoding='utf-8')
+error_file_handler.setFormatter(formatter)
+error_file_handler.setLevel(logging.ERROR)
+root_logger.addHandler(error_file_handler)
+
+# Настраиваем вывод в консоль
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+root_logger.addHandler(console_handler)
+
+# Получаем логгер для текущего модуля
+logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
 load_dotenv()
-
-# Настройка логирования
-logger = logging.getLogger()
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
-
-app = Flask(__name__)
 
 # Конфигурация
 TAPLINK_WEBHOOK_SECRET = os.getenv('TAPLINK_WEBHOOK_SECRET')
 RETAILCRM_API_KEY = os.getenv('RETAILCRM_API_KEY')
 RETAILCRM_URL = os.getenv('RETAILCRM_URL')
+
+app = Flask(__name__)
 
 @app.route('/')
 def index():

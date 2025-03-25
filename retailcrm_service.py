@@ -10,11 +10,6 @@ from datetime import datetime
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 # Загрузка переменных окружения
 load_dotenv()
