@@ -512,7 +512,8 @@ def process_order_data(order_data: dict) -> dict:
                     'price': float(offer.get('price', 0))
                 })
             else:
-                logger.warning(f"Product not found in mapping: {offer.get('title')}")
+                logger.error(f"Product not found in mapping: {offer.get('title')}")
+                return None
         
         return {
             'customer': customer_data,
@@ -537,6 +538,12 @@ def create_order_in_crm(order_data):
     try:
         # Преобразуем данные заказа
         order_data = process_order_data(order_data)
+        if not order_data:
+            return {
+                'success': False,
+                'error': 'Failed to process order data',
+                'items': []
+            }
         # Обновляем или создаем клиента
         customer_data_crm = create_or_update_customer_in_crm(order_data['customer'])
         if not customer_data_crm:
