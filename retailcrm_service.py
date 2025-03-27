@@ -48,7 +48,7 @@ PRODUCTS_MAPPING = {
     '25': 'БЛИНЧИКИ С КУРИЦЕЙ',
     '26': 'БЛИНЧИКИ С ТВОРОГОМ',
     '27': 'ВАРЕНИКИ С ТВОРОГОМ',
-    '28': 'ВАРЕНИКИ С КАРТОШКОЙ',
+    '28': 'ВАРЕНИКИ С КАРТОШКОЙ (ПОСТНЫЕ)',
     '29': 'ПЕРЦЫ ФАРШИРОВАННЫЕ РИСОМ И ГРИБАМИ',
     '30': 'ГОЛУБЦЫ С РИСОМ И ГРИБАМИ',
     '31': 'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ',
@@ -84,20 +84,20 @@ def create_customer_in_crm(customer_data):
             'firstName': customer_data.get('firstName', ''),
             'lastName': customer_data.get('lastName', ''),
             'patronymic': customer_data.get('patronymic', ''),
-            'email': customer_data.get('email'),
+            'email': customer_data.get('email', ''),
             'phones': [{
                 'number': customer_data.get('phone')
             }],
             'address': {
-                'text': customer_data.get('address'),
-                'city': customer_data.get('city'),
-                'street': customer_data.get('street'),
-                'building': customer_data.get('building'),  # Дом
-                'flat': customer_data.get('flat'),  # Номер квартиры/офиса
-                'floor': customer_data.get('floor'),  # Этаж
-                'block': customer_data.get('block'),  # Подъезд
-                'house': customer_data.get('house'),  # Строение
-                'housing': customer_data.get('housing'),  # Корпус
+                'text': customer_data.get('address', ''),
+                'city': customer_data.get('city', ''),
+                'street': customer_data.get('street', ''),
+                'building': customer_data.get('building', ''),  # Дом
+                'flat': customer_data.get('flat', ''),  # Номер квартиры/офиса
+                'floor': customer_data.get('floor', 0),  # Этаж
+                'block': customer_data.get('block', 0),  # Подъезд
+                'house': customer_data.get('house', ''),  # Строение
+                'housing': customer_data.get('housing', ''),  # Корпус
                 'countryIso': 'RU'
             },
             'contragent': {
@@ -150,14 +150,16 @@ def get_address_changes(current_address: dict, new_address: dict) -> dict:
     """
     changes = {}
     for key, value in new_address.items():
-        current_value = current_address.get(key)
-        # Если оба значения None или пустые строки, пропускаем
-        if (current_value is None and value is None or current_value == '' and value == ''):
+        # Пропускаем пустые значения в новом адресе
+        if value is None or value == '' or value == 0:
             continue
-        # Если одно из значений None или пустая строка, а другое нет - считаем изменением
-        if (current_value is None or current_value == '') != (value is None or value == ''):
+            
+        current_value = current_address.get(key)
+        # Если текущее значение пустое, а новое нет - считаем изменением
+        if current_value is None or current_value == '' or current_value == 0:
             changes[key] = value
             continue
+            
         # Для непустых значений сравниваем как строки
         if str(current_value) != str(value):
             changes[key] = value
@@ -228,7 +230,7 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
     
     # Определяем изменения в данных клиента
     changes = get_customer_changes(customer_data_crm, customer_data)
-    
+
     # Если есть изменения, обновляем данные
     if any(changes.values()):
         logger.info(f"Customer {customer_data_crm['id']} has changes: {changes}")
@@ -249,7 +251,7 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
                 logger.info(f"Successfully updated customer {customer_data_crm['id']} in RetailCRM")
                 return customer_data_crm
             
-            logger.error(f"Failed to update customer {customer_data_crm['id']} in RetailCRM")
+            logger.error(f"Failed to update customer {customer_data_crm['id']} in RetailCRM {response.get_response()}")
             return None
             
         except Exception as e:
