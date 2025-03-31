@@ -5,6 +5,7 @@ import json
 import retailcrm
 import time
 from datetime import datetime
+import requests
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -19,43 +20,6 @@ RETAILCRM_URL = os.getenv('RETAILCRM_URL')
 # Инициализация клиента RetailCRM v5
 crm = retailcrm.v5(RETAILCRM_URL, RETAILCRM_API_KEY)
 
-# Словарь соответствия артикулов и наименований товаров
-PRODUCTS_MAPPING = {
-    'ПОДАРОЧНЫЙ СЕРТИФИКАТ': '1',
-    'ПЕЛЬМЕНИ ИЗ ИНДЕЙКИ КЛАССИЧЕСКИЕ': '2',
-    'ПЕЛЬМЕНИ ИЗ ИНДЕЙКИ РАВИОЛИ': '3',
-    'МАНТЫ РУБЛЕННЫЕ': '4',
-    'МАНТЫ ИЗ ИНДЕЙКИ С КАРТОШКОЙ': '5',
-    'КОТЛЕТЫ ИЗ ИНДЕЙКИ (В ПАНИРОВКЕ)': '6',
-    'КОТЛЕТЫ ИЗ ИНДЕЙКИ (БЕЗ ПАНИРОВКЕ)': '7',
-    'ЗРАЗЫ ИЗ ИНДЕЙКИ С СЫРОМ': '8',
-    'ЗРАЗЫ ИЗ ИНДЕЙКИ С ЯЙЦОМ': '9',
-    'ГОЛУБЦЫ ИЗ ИНДЕЙКИ': '10',
-    'ПЕРЦЫ ФАРШИРОВАННЫЕ ИЗ ИНДЕЙКИ': '11',
-    'ЛЮЛЯ КЕБЕБ ИЗ ИНДЕЙКИ': '12',
-    'ТЕФТЕЛИ ИЗ ИНДЕЙКИ С РИСОМ': '13',
-    'ФРИКАДЕЛЬКИ ИЗ ИНДЕЙКИ С РИСОМ': '14',
-    'ОТБИВНЫЕ В ПАНИРОВКИ ИЗ ИНДЕЙКИ': '15',
-    'КУРНИК ИЗ ИНДЕЙКИ (1 шт.)': '16',
-    'ЭЧПОЧМАК ИЗ ИНДЕЙКИ (1 шт.)': '17',
-    'ПЕЛЬМЕНИ КУРИНЫЕ': '18',
-    'КОТЛЕТЫ КУРИНЫЕ': '19',
-    'КУПАТЫ КУРИНЫЕ': '20',
-    'СЫРНИКИ': '21',
-    'СЫРНИКИ С СЕМЕНАМИ ЧИА': '22',
-    'ЗАПЕКАНКА (1 шт., 200 гр.)': '23',
-    'ЗАПЕКАНКА С СЕМЕНАМИ ЧИА (1 шт., 200 гр.)': '24',
-    'БЛИНЧИКИ С КУРИЦЕЙ': '25',
-    'БЛИНЧИКИ С ТВОРОГОМ': '26',
-    'ВАРЕНИКИ С ТВОРОГОМ': '27',
-    'ВАРЕНИКИ С КАРТОШКОЙ (ПОСТНЫЕ)': '28',
-    'ПЕРЦЫ ФАРШИРОВАННЫЕ РИСОМ И ГРИБАМИ': '29',
-    'ГОЛУБЦЫ С РИСОМ И ГРИБАМИ': '30',
-    'МАНТЫ С КАРТОШКОЙ И КАПУСТОЙ': '31',
-    'МАНТЫ С КАРТОШКОЙ И ГРИБАМИ': '32',
-    'МАНТЫ ИЗ ИНДЕЙКИ С ТЫКВОЙ': '33',
-    'СЫРНИКИ С ШОКОЛАДОМ': '34'
-}
 
 
 
@@ -120,7 +84,6 @@ def create_customer_in_crm(customer_data):
     except Exception as e:
         logger.error(f"Error creating customer in RetailCRM: {str(e)}")
         return None
-    
 
 def format_address(address_data: dict) -> str:
     """
@@ -230,7 +193,7 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
     
     # Определяем изменения в данных клиента
     changes = get_customer_changes(customer_data_crm, customer_data)
-
+    
     # Если есть изменения, обновляем данные
     if any(changes.values()):
         logger.info(f"Customer {customer_data_crm['id']} has changes: {changes}")
@@ -262,20 +225,42 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
 
 
 
+def get_offer(session, item):
+    """
+    Получает данные о торговом предложении из RetailCRM по его имени или по externalId и номиналу
+    """
+    
+    try:
+        if item.get('nominal'):
+            external_id = f"1-{item.get('nominal')}"
+            response = session.get(f"{RETAILCRM_URL}/api/v5/store/offers?filter[externalIds][]={external_id}")
+        else:
+            response = session.get(f"{RETAILCRM_URL}/api/v5/store/offers?filter[name]={item.get('title')}")
+            
+        response_data = response.json()
+        if not response_data.get('success'):
+            raise ValueError(f"Ошибка API RetailCRM: {response_data.get('errorMsg', 'Неизвестная ошибка')}")
+            
+        offers = response_data.get('offers', [])
+        if not offers:
+            raise IndexError(
+                f"Торговое предложение не найдено: "
+                f"{'externalId=1-' + item.get('nominal') if item.get('nominal') else 'name=' + item.get('title')}"
+            )
+            
+        return offers[0]
+        
+    except requests.RequestException as e:
+        logger.error(f"Ошибка при запросе к RetailCRM: {str(e)}")
+        raise
 
     
+    
 
-def prepare_order_data(customer_data_crm, items, total_sum):
+def prepare_order_data(customer_data_crm, items, total_sum, manager_comment):
     """
     Подготавливает данные для создания заказа
-    
-    Args:
-        customer_data_crm (dict): Данные клиента из RetailCRM
-        items (list): Список товаров
-        total_sum (float): Общая сумма заказа
-        
-    Returns:
-        dict: Данные для создания заказа
+    Собирает все данные в финальную структуру заказа
     """
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
@@ -294,7 +279,7 @@ def prepare_order_data(customer_data_crm, items, total_sum):
         'call': False,
         'expired': False,
         'customerComment': customer_data_crm.get('comment', ''),
-        'managerComment': f"Промокод: {customer_data_crm.get('promo_code', '')}" if customer_data_crm.get('promo_code') else None,
+        'managerComment': manager_comment,
         'contragent': {
             'contragentType': 'individual'
         },
@@ -353,65 +338,51 @@ def prepare_order_data(customer_data_crm, items, total_sum):
 def prepare_order_items(items):
     """
     Подготавливает товары для заказа
-        
-    Args:
-        items (list): Список товаров из Taplink
-        
-    Returns:
-        tuple: (список подготовленных товаров, общая сумма)
     """
-    available_items = []
-    total_sum = 0
+    try:
+        available_items = []
+        total_sum = 0
+        session = requests.Session()
+        session.headers['X-API-KEY'] = RETAILCRM_API_KEY
+        session.headers['Content-Type'] = 'application/x-www-form-urlencoded'
     
-    for item in items:
-        article = item.get('article')
-        product_name = item.get('title')
-        nominal = item.get('nominal')
-        requested_quantity = item.get('quantity', 1)
-        price = item.get('price', 0)
-        weight = float(item.get('weight', 1000))
-        if article == '1':
-            weight = 0
-        
-        if not article or not nominal:
-            logger.error(f"Missing article or nominal in item: {item}")
-            continue
-        
-        # Добавляем информацию о товаре
-        available_items.append({
-            'initialPrice': price,
+        manager_comment = ""
+        for item in items:
+            try:
+                offer = get_offer(session, item)
+            except IndexError as e:
+                manager_comment += f"{str(e)}\n"
+                continue
+            offer_id = offer.get('id')
+            nominal = item.get('nominal')
+            requested_quantity = item.get('quantity', 1)
+            price = offer.get('prices')[0].get('price')
+    
+            # Добавляем информацию о товаре
+            available_items.append({
             'quantity': requested_quantity,
-            'productName': product_name,
             'offer': {
-                'externalId': f"{article}",
-            },
-            'status': 'new',
-            'ordering': len(available_items) + 1,
-            'vatRate': 'none',
-            'properties': [],
-            'purchasePrice': price,
-            'comment': '',
-            'markingCodes': [],
-            'externalIds': [],
-            'weight': weight
-        })
-        if article == '1':
-            available_items[-1]['offer']['externalId'] = f"{article}-{nominal}"
+                    'id': offer_id,
+                }
+            })
+            if nominal:
+                available_items[-1]['offer'].pop('id')
+                available_items[-1]['offer']['externalId'] = f"1-{nominal}"
+
         
-        total_sum += requested_quantity * price
+            total_sum += requested_quantity * price
+        
+        
+    except Exception as e:
+        logger.error(f"Error preparing order items: {str(e)}")
+        return [], 0
     
-    return available_items, total_sum
+    return available_items, total_sum, manager_comment
 
 
 def process_order_data(order_data: dict) -> dict:
     """
     Преобразует данные заказа из формата Taplink в формат для RetailCRM
-    
-    Args:
-        order_data (dict): Данные заказа из Taplink
-        
-    Returns:
-        dict: Преобразованные данные заказа
     """
     try:
         # Получаем данные из webhook
@@ -483,30 +454,17 @@ def process_order_data(order_data: dict) -> dict:
         # Преобразуем товары
         items = []
         for offer in order_data.get('offers', []):
-            # Ищем артикул товара по названию в маппинге
-            article = PRODUCTS_MAPPING.get(offer.get('title'))
-            if not article:
-                logger.error(f"Product not found in mapping: {offer.get('title')}")
-                return None
-
             if offer.get('options'):
                 for option in offer.get('options', []):
                     items.append({
-                        'id': offer.get('offer_id'),
-                        'article': article,
                         'title': offer.get('title'),
                         'nominal': option.split(' ')[1],
                         'quantity': int(offer.get('amount', 1)),
-                        'price': float(option.split(' ')[1])
                     })
             else:
                 items.append({
-                    'id': offer.get('offer_id'),
-                    'article': article,
                     'title': offer.get('title'),
-                    'nominal': '1000',
                     'quantity': int(offer.get('amount', 1)),
-                    'price': float(offer.get('price', 0))
                 })
 
         
@@ -550,7 +508,16 @@ def create_order_in_crm(order_data):
             }
         
         # Подготавливаем товары
-        available_items, total_sum = prepare_order_items(order_data['items'])
+        available_items, total_sum, manager_comment = prepare_order_items(order_data['items'])
+        if not available_items:
+            logger.error("No valid items after preparation")
+            return {
+                'success': False,
+                'error': 'No valid items after preparation',
+                'items': []
+            }
+        logger.info(f"Available items: {available_items}")
+        logger.info(f"Total sum: {total_sum}")
         
         if not available_items:
             logger.error("No valid items after preparation")
@@ -561,7 +528,7 @@ def create_order_in_crm(order_data):
             }
         
         # Подготавливаем данные заказа
-        prepared_order_data = prepare_order_data(customer_data_crm, available_items, total_sum)
+        prepared_order_data = prepare_order_data(customer_data_crm, available_items, total_sum, manager_comment)
         # Логируем данные заказа для отладки
         logger.info(f"Prepared order data: {json.dumps(prepared_order_data, indent=2)}")
         
