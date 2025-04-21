@@ -47,7 +47,6 @@ def create_customer_in_crm(customer_data):
         customer = {
             'firstName': customer_data.get('firstName', ''),
             'lastName': customer_data.get('lastName', ''),
-            'patronymic': customer_data.get('patronymic', ''),
             'email': customer_data.get('email', ''),
             'phones': [{
                 'number': customer_data.get('phone')
@@ -139,7 +138,7 @@ def get_customer_changes(current_data: dict, new_data: dict) -> dict:
     changes = {}
     
     # Проверяем изменения в основных полях
-    for field in ['firstName', 'lastName', 'patronymic']:
+    for field in ['firstName', 'lastName']:
         if current_data.get(field, '') != new_data.get(field, ''):
             changes[field] = new_data.get(field, '')
     
@@ -199,7 +198,7 @@ def create_or_update_customer_in_crm(customer_data: dict) -> dict:
         logger.info(f"Customer {customer_data_crm['id']} has changes: {changes}")
         
         # Обновляем основные данные
-        for field in ['firstName', 'lastName', 'patronymic']:
+        for field in ['firstName', 'lastName']:
             if field in changes:
                 customer_data_crm[field] = changes[field]
         
@@ -257,7 +256,7 @@ def get_offer(session, item):
     
     
 
-def prepare_order_data(customer_data_crm, items, total_sum, manager_comment):
+def prepare_order_data(customer_data_crm, items, total_sum, manager_comment, extra_data, delivery_date):
     """
     Подготавливает данные для создания заказа
     Собирает все данные в финальную структуру заказа
@@ -273,7 +272,6 @@ def prepare_order_data(customer_data_crm, items, total_sum, manager_comment):
         'statusUpdatedAt': current_time,
         'lastName': customer_data_crm.get('lastName', ''),
         'firstName': customer_data_crm.get('firstName', ''),
-        'patronymic': customer_data_crm.get('patronymic', ''),
         'phone': customer_data_crm.get('phones')[0].get('number') if customer_data_crm.get('phones') else '',
         'email': customer_data_crm.get('email', ''),
         'call': False,
@@ -299,6 +297,7 @@ def prepare_order_data(customer_data_crm, items, total_sum, manager_comment):
             'cost': 0,
             'netCost': 0,
             'address': {
+                'notes': extra_data,
                 'text': customer_data_crm.get('address', {}).get('text', ''),
                 'city': customer_data_crm.get('address', {}).get('city', ''), # Город
                 'street': customer_data_crm.get('address', {}).get('street', ''), # Улица
@@ -310,17 +309,12 @@ def prepare_order_data(customer_data_crm, items, total_sum, manager_comment):
                 'housing': customer_data_crm.get('address', {}).get('housing', ''), # Строение
                 'countryIso': 'RU'
             },
-            'date': customer_data_crm.get('delivery_date'),
+            'date': datetime.strptime(delivery_date, '%d.%m.%Y').strftime('%Y-%m-%d') if delivery_date else None,
             'time': {
                 'from': customer_data_crm.get('delivery_time'),
                 'to': customer_data_crm.get('delivery_time')
             }
         },
-        'payments': [{
-            'type': customer_data_crm.get('payment_type', 'cash'),
-            'status': 'not-paid',
-            'amount': total_sum
-        }],
         'totalSumm': total_sum,
         'source': {
             'source': 'taplink',
@@ -399,12 +393,10 @@ def process_order_data(order_data: dict) -> dict:
                 customer_data['firstName'] = value
             elif title == 'Фамилия':
                 customer_data['lastName'] = value
-            elif title == 'Отчество':
-                customer_data['patronymic'] = value
             elif title == 'Телефон':  # Телефон
                 customer_data['phone'] = value
-            elif title == 'Время доставки':  # Время доставки
-                customer_data['delivery_time'] = value
+            elif title == 'Время доставки / примечание / промокод':
+                customer_data['extra_data'] = value
             elif title == 'Дата доставки':  # Дата доставки
                 customer_data['delivery_date'] = value
             elif title == 'Способ оплаты':  # Способ оплаты
@@ -528,7 +520,8 @@ def create_order_in_crm(order_data):
             }
         
         # Подготавливаем данные заказа
-        prepared_order_data = prepare_order_data(customer_data_crm, available_items, total_sum, manager_comment)
+        prepared_order_data = prepare_order_data(customer_data_crm, available_items, total_sum, manager_comment, order_data['customer'].get('extra_data', ''),
+                                                  order_data['customer'].get('delivery_date', ''))
         # Логируем данные заказа для отладки
         logger.info(f"Prepared order data: {json.dumps(prepared_order_data, indent=2)}")
         
