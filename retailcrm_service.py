@@ -401,10 +401,6 @@ def process_order_data(order_data: dict) -> dict:
                 customer_data['delivery_date'] = value
             elif title == 'Способ оплаты':  # Способ оплаты
                 customer_data['payment_type'] = value
-            elif title == 'Примечание':
-                customer_data['comment'] = value
-            elif title == 'Промокод':
-                customer_data['promo_code'] = value
             elif title == 'Город':
                 customer_data['city'] = value
             elif title == 'Улица':
